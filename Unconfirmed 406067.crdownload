@@ -1,0 +1,60 @@
+from django.db import models
+from django import forms
+from django.utils import timezone
+
+# Create your models here.
+class User(models.Model):
+    GENDERS = (
+        ('F','Female'),
+        ('M','Male')
+    )
+
+    ACTIVITY_MODIFIER = (
+        ('VL','Very Light'),
+        ('L','Light'),
+        ('M','Moderate'),
+        ('H','Heavy'),
+        ('VH','Very Heavy')
+    )
+    
+    name = models.CharField(max_length=20,null=True)
+    height = models.PositiveIntegerField(max_length=3)
+    weight = models.PositiveIntegerField(max_length=3)
+    age = models.PositiveIntegerField(max_length=2)
+    gender = models.CharField(max_length=1,choices = GENDERS)
+    currentdate = models.DateField(default=timezone.now)
+    bmi = models.FloatField(null=True)
+    bft = models.FloatField(null=True)
+    bmr = models.FloatField(null=True)
+    activity_modifier = models.FloatField(null=True)
+    min_calorie = models.FloatField(null=True)
+
+    # adding the field for the carbs, proteins and fats
+    carbs = models.FloatField(null=True)
+    fats = models.FloatField(null=True)
+    proteins = models.FloatField(null=True)
+    
+
+
+# creating a sample class for testing the functionality of form data transfer
+class AddBook(models.Model):
+    author = models.CharField(max_length=200,null=False,blank=False)
+    title = models.CharField(max_length=200,null=False,blank=False)
+    description= models.TextField()
+
+    def __str__(self):
+        return self.title
+
+# creating the model for seeing the operations result
+class Operations(models.Model):
+    OPERATIONS = (
+        ('+','Addition'),
+        ('-','Subtraction'),
+        ('*','Multiplication'),
+        ('/','Division'),
+    )
+
+    num1 = models.PositiveIntegerField()
+    num2 = models.PositiveIntegerField()
+    operations =   models.CharField(max_length=1,choices = OPERATIONS)
+    answer = models.IntegerField()
