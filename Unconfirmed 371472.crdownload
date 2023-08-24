@@ -1,0 +1,473 @@
+from django.http import HttpResponse
+from django.shortcuts import render
+from .forms import *
+from django.http import HttpResponseRedirect
+from main.models import User
+import pandas as pd
+from wsgiref.util import FileWrapper
+from django.template.response import TemplateResponse
+import json
+
+# importing the ml libraries
+import matplotlib.pyplot as plt
+import seaborn as sns; sns.set()
+import numpy as np
+from sklearn.cluster import KMeans
+
+# Create your views here.
+# def home(request):
+#     if request.method == 'POST':
+#         author = request.POST['author']
+#         title = request.POST['title']
+#         description = request.POST['desc']
+
+#         new_book = AddBook(author=author,title=title,description=description)
+#         new_book.save()
+    
+#     return render(request,'healthCalculator.html')
+
+# making the view for calculating the bmi
+def bmi(request):
+    ans1 = ''
+    ans2 = ''
+    min_calorie = ''
+    if request.method == 'POST':
+        height = request.POST['height']
+        weight = request.POST['weight']
+        age = request.POST['age']
+        gender = request.POST['gender']
+        activity_modifier = request.POST.get('activity')
+        name = request.POST.get('user')
+
+        # calculating the bmi
+        h = eval(request.POST.get('height'))
+        w = eval(request.POST.get('weight'))
+        ans1 = w/(h/100)**2
+
+        # calculating the bft
+        a = eval(request.POST.get('age'))
+        ans2 = (1.20 * ans1) + (0.23 *a) - 16.2
+
+        bmi = ans1
+
+        # assigning the appropriate index according to the bmi
+        if bmi <= 18.4:
+            print("You are underweight.")
+            index = 0
+        elif bmi <= 24.9:
+            print("You are healthy.")
+            index = 1
+        elif bmi <= 29.9:
+            print("You are over weight.")
+            index = 2
+        else:
+            print("You are obese.")
+            index = 3
+        
+        print(index)
+        bft = ans2
+
+        # getting the basal metabolic rate
+        if gender == 'M':
+            gf = 1.0
+        else:
+            gf = 0.9
+
+        # displaying and calculating the lean factor on the basis of the body fat percentage calculated
+
+        lean_factor = 0
+        if gender == 'M':
+            if bft>=10 and bft<=14:
+                lean_factor = 1.0
+            elif bft>=15 and bft<=20:
+                lean_factor = 0.95
+            elif bft>=21 and bft<=28:
+                lean_factor = 0.90
+            else:
+                lean_factor = 0.85
+        else:
+            if bft>=14 and bft<=18:
+                lean_factor = 1.0
+            elif bft>=19 and bft<=28:
+                lean_factor = 0.95
+            elif bft>=29 and bft<=38:
+                lean_factor = 0.90
+            else:
+                lean_factor = 0.85 
+  
+        ans3 = w*gf*24*lean_factor # Basal Metabolic Rate
+        bmr = ans3
+
+        # assigining the activity modifer value
+        am = 0
+        if activity_modifier == 'VL':
+            am = 1
+        elif activity_modifier == 'L':
+            am = 1.55
+        elif activity_modifier == 'M':
+            am = 1.65
+        elif activity_modifier == 'H':
+            am = 1.80
+        elif activity_modifier == 'VH':
+            am = 2.0
+        
+        activity_modifier = am
+
+        # determining the minimum calorie requirement
+        min_calorie = bmr * activity_modifier
+
+        # defining the carbohydrate, fats and protein requirement according to the 
+        # action to be taken that is whether to loss or gain weight
+        
+        # assigning the variables
+        if index == 1:
+            action = 0
+            print("You are healthy")
+            carb = 0.45 * min_calorie
+            fat = 0.20 * min_calorie
+            pro = 0.10 * min_calorie
+        elif index == 0:
+            action = 1
+            print("You need to gain weight")
+            pro = 1.5 * w
+            fat = 0.25 * (min_calorie + 500)
+            carb = 5 * w
+            print(pro)
+            print(fat)
+            print(carb)
+        else:
+            action = 2
+            print("You need to loose weight")
+            carb = 0.35 * min_calorie
+            fat = 0.30 * min_calorie
+            pro = 0.35 * min_calorie
+            print(pro)
+            print(fat)
+            print(carb)
+
+        # assigning the carbohydrates, fats and proteins field in the model
+        carbs = carb
+        proteins = pro
+        fats = fat
+        
+        
+
+
+
+        #saving in the database
+        new_record = User(name=name,height=height,weight=weight,age=age,gender=gender,bmi=bmi,
+        bft=bft,bmr=bmr,activity_modifier=activity_modifier,min_calorie=min_calorie,
+        carbs=carbs,proteins=pro,fats=fats)
+        new_record.save()
+    return render(request,"healthCalculator.html",{'ans1':ans1,'ans2':ans2,'min_calorie':min_calorie})
+
+
+# making the function such as to redirect and display the result
+def register(response):
+	if response.method == "POST":
+		form = AddUserForm(response.POST)
+		if form.is_valid():
+			form.save()
+		return redirect("/bmi")
+	else:
+		form = AddUserForm()
+	return render(response,"register.html",{"form" : form})
+
+# making the function for viewing the result
+def result(request):
+    # fetching the data objects
+    user = User.objects.last()
+    return render(request,"result.html",{'carbs':user.carbs,'fats':user.fats,'proteins':user.proteins})
+
+# making the function for displaying the table
+def table(request):
+    # getting the dataset
+    df = pd.read_csv("Food_data.csv")
+    df = df[:10]
+    food = df.to_html()
+    
+    return HttpResponse(food)
+
+def table_one(request):
+    data = pd.read_csv("Food_data.csv")
+    
+    # segregating the necessary columns
+    food = data[["Category","Description", "Data.Carbohydrate","Data.Sugar Total","Data.Fat.Monosaturated Fat","Data.Fat.Polysaturated Fat","Data.Protein","Data.Vitamins.Vitamin A - RAE"]]
+
+    # cleaning the dataset
+    # Set the index of the DataFrame to category name
+    data_with_index = food.set_index("Category")
+    # With the index, we can drop the rows for a single category
+    data_with_index = data_with_index.drop("No Category")
+    
+    # cleaned dataset is obtained
+    df = data_with_index.dropna()
+    df.rename(columns = {'Data.Carbohydrate':'Carbohydrate', 'Data.Sugar Total': 'Sugar'}, inplace=True)
+    # getting the carbs dataset seperately
+    df_carbs = df.filter(['Description','Carbohydrate','Sugar'], axis=1)
+    # getting the sorted carbs dataset
+    df_carbs=df_carbs.sort_values(by='Carbohydrate',ascending=False)
+
+    # calculating the centroids
+    #number of clusters
+    K=2
+
+    # Select random observation as centroids
+    Centroids = (df.sample(n=K))
+
+    # fixing the centroids
+    Centroids1=[67.958665,20.982092]
+    Centroids2=[8.259487,2.130794]
+
+    # writing the main function for the prediction
+    import math
+    x1=67.958665
+    y1=20.982092
+    x2=8.259487
+    y2=2.130794
+    # getting the carbohydrates value from the database
+    user = User.objects.last()
+    x=user.carbs
+    #y=float(input("Enter sugar requirement:"))
+    y=11.5
+    e1 = math.sqrt((x-x1)**2 + (y-y1)**2)
+    e2 = math.sqrt((x-x2)**2 + (y-y2)**2)
+    if e1<e2:
+        carbs = [67.00]
+        f1=df_carbs['Carbohydrate']<=67.0
+        sug=[20.00]
+        f2=df_carbs['Sugar']<=20
+        ndf=df_carbs.loc[f1 & f2]
+        ndf1=ndf.head()
+        # parsing the DataFrame in json format.
+        json_records = ndf1.reset_index().to_json(orient ='records')
+        arr = []
+        arr = json.loads(json_records)
+        context = {'d': arr}
+    else:
+        carbs = [8.20]
+        f1=df_carbs['Carbohydrate']<=8.2
+        sug=[1.78]
+        f2=df_carbs['Sugar']<=1.7
+        #print(df.loc[f1])
+        ndf=(df_carbs.loc[f1 & f2])
+        ndf1=ndf.head()
+        # parsing the DataFrame in json format.
+        json_records = ndf1.reset_index().to_json(orient ='records')
+        arr = []
+        arr = json.loads(json_records)
+        context = {'d': arr}
+    
+
+    return render(request,"table.html",context)
+
+# making the function for proteins
+def table_two(request):
+    data = pd.read_csv("Food_data.csv")
+    
+    # segregating the necessary columns
+    food = data[["Category","Description", "Data.Carbohydrate","Data.Sugar Total","Data.Fat.Monosaturated Fat","Data.Fat.Polysaturated Fat","Data.Protein","Data.Vitamins.Vitamin A - RAE"]]
+
+    # cleaning the dataset
+    # Set the index of the DataFrame to category name
+    data_with_index = food.set_index("Category")
+    # With the index, we can drop the rows for a single category
+    data_with_index = data_with_index.drop("No Category")
+    
+    # cleaned dataset is obtained
+    df = data_with_index.dropna()
+    df.rename(columns = {'Data.Protein':'Protein', 'Data.Vitamins.Vitamin A - RAE': 'Vitamin'}, inplace=True)
+    # getting the proteins dataset seperately
+    df_prots = df.filter(["Description","Protein","Vitamin"], axis=1)
+    # getting the sorted carbs dataset
+    df_prots=df_prots.sort_values(by='Protein',ascending=False)
+
+    # Step 1 and 2 - Choose the number of clusters (k) and select random centroid for each cluster
+
+    #number of clusters
+    K=2
+
+    # Select random observation as centroids
+    Centroids = (df.sample(n=K))
+
+    # fixing the centroids
+    Centroids3=[10.921076,23.150315]
+    Centroids4=[8.698232,1422.229798]
+
+    # writing the main function for the prediction
+    import math
+    x1=10.921076
+    y1=23.150315
+    x2=8.698232
+    y2=1422.229798
+    # getting the carbohydrates value from the database
+    user = User.objects.last()
+    x=user.proteins
+    #y=float(input("Enter sugar requirement:"))
+    y=720
+    e1 = math.sqrt((x-x1)**2 + (y-y1)**2)
+    e2 = math.sqrt((x-x2)**2 + (y-y2)**2)
+    if e1<e2:
+        prots = [10.0]
+        f1=df_prots['Protein']<=10.0
+        vit=[22.0]
+        f2=df_prots['Vitamin']<=22.0
+        ndf=df_prots.loc[f1]
+        ndf1=ndf.head()
+        # parsing the DataFrame in json format.
+        json_records = ndf1.reset_index().to_json(orient ='records')
+        arr = []
+        arr = json.loads(json_records)
+        context = {'d': arr}
+    else:
+        prots = [8.6]
+        f1=df_prots['Protein']<=8.6
+        vit=[1400.0]
+        f2=df_carbs['Sugar']<=1.7
+        #print(df.loc[f1])
+        f2=df_prots['Vitamin']<=1400
+        ndf=df_prots.loc[f1]
+        ndf1=ndf.head()
+        # parsing the DataFrame in json format.
+        json_records = ndf1.reset_index().to_json(orient ='records')
+        arr = []
+        arr = json.loads(json_records)
+        context = {'d': arr}
+    
+
+    return render(request,"table_proteins.html",context)
+
+# making the function for recommeding fats items
+def table_three(request):
+    data = pd.read_csv("Food_data.csv")
+    
+    # segregating the necessary columns
+    food = data[["Category","Description", "Data.Carbohydrate","Data.Sugar Total","Data.Fat.Monosaturated Fat","Data.Fat.Polysaturated Fat","Data.Protein","Data.Vitamins.Vitamin A - RAE"]]
+
+    # cleaning the dataset
+    # Set the index of the DataFrame to category name
+    data_with_index = food.set_index("Category")
+    # With the index, we can drop the rows for a single category
+    data_with_index = data_with_index.drop("No Category")
+
+    # cleaned dataset is obtained
+    df = data_with_index.dropna()
+
+    # Renaming the columns
+    df.rename(columns = {'Data.Fat.Monosaturated Fat':'Mono_Fat', 'Data.Fat.Polysaturated Fat': 'Poly_Fat'}, inplace=True)
+    # getting the fat sepcific data
+    df_fats = df.filter(["Description","Mono_Fat","Poly_Fat"], axis=1)
+    df_fats=df_fats.sort_values(by='Mono_Fat',ascending=False)
+
+    # Step 1 and 2 - Choose the number of clusters (k) and select random centroid for each cluster
+
+    #number of clusters
+    K=2
+
+    # Select random observation as centroids
+    Centroids = (df.sample(n=K))
+
+    # Fixing the centroids
+    Centroids5=[2.628097,1.201360]
+    Centroids6=[31.983059,20.847037]
+
+    # making the main function
+    import math
+    x1=2.628097
+    y1=1.201360
+    x2=31.983059
+    y2=20.847037
+    # getting the carbohydrates value from the database
+    user = User.objects.last()
+    x=user.fats
+    #y=float(input("Enter sugar requirement:"))
+    y=10.5
+    e1 = math.sqrt((x-x1)**2 + (y-y1)**2)
+    e2 = math.sqrt((x-x2)**2 + (y-y2)**2)
+    if e1<e2:
+        mfats = [2.20]
+        f1=df_fats['Mono_Fat']<=2.20
+        pfats=[1.00]
+        f2=df_fats['Poly_Fat']<=1
+        ndf=df_fats.loc[f1 & f2]
+        ndf1=ndf.head()
+        # parsing the DataFrame in json format.
+        json_records = ndf1.reset_index().to_json(orient ='records')
+        arr = []
+        arr = json.loads(json_records)
+        context = {'d': arr}
+    else:
+        mfats = [31.832]
+        f1=df_fats['Mono_Fat']<=31.832
+        pfats=[18.236]
+        f2=df_fats['Poly_Fat']<=18.236
+        ndf=df_fats.loc[f1 & f2]
+        ndf1=ndf.head()
+        # parsing the DataFrame in json format.
+        json_records = ndf1.reset_index().to_json(orient ='records')
+        arr = []
+        arr = json.loads(json_records)
+        context = {'d': arr}
+
+    return render(request,"table_fats.html",context)
+
+
+
+
+
+    
+
+# making the views for filling the Operations
+def operations(request):
+    ans = ''
+    if request.method == 'POST':
+        num1 = request.POST['num1']
+        num2 = request.POST['num2']
+        operations = request.POST['opr']
+
+        n1 = eval(request.POST.get('num1'))
+        n2 = eval(request.POST.get('num2'))
+        opr = request.POST.get('opr')
+        ans = 0
+        if opr == "+":
+            ans = n1+n2
+        elif opr == "-":
+            ans = n1-n2
+        elif opr == "*":
+            ans = n1*n2
+        elif opr == "/":
+            ans = n1/n2
+        
+        answer = ans
+       
+
+        #saving in the database
+        new_opr = Operations(num1=num1,num2=num2,operations=operations,answer=answer)
+        new_opr.save()
+
+    return render(request,"calculator.html",{'ans':ans})
+         
+       
+    
+    
+
+def calculator(request):
+    c = ''
+    try:
+        if request.method == "POST":
+            n1 = eval(request.POST.get('num1'))
+            n2 = eval(request.POST.get('num2'))
+            opr = request.POST.get('opr')
+
+            if opr == "+":
+                c = n1+n2
+            elif opr == "-":
+                c = n1-n2
+            elif opr == "*":
+                c = n1*n2
+            elif opr == "/":
+                c = n1/n2
+    except:
+        c = "Invalid Operations performed"
+    print(c)
+    return render(request,"calculator.html",{'c':c})

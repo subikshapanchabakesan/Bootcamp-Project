@@ -1,0 +1,15 @@
+from django.urls import path
+from main import views
+from register import views as v
+
+urlpatterns = [
+    path('',v.register),
+    path('bmi/',views.bmi),
+    path('result/',views.result),
+    path('table/',views.table_one, name="table_one"), # for carbs
+    path('table_proteins',views.table_two, name="table_two"), # for proteins
+    path('table_fats',views.table_three, name="table_three"),
+    path('calculator/',views.operations),
+   
+   
+]
